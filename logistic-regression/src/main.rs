@@ -1,7 +1,6 @@
 extern crate csv;
 use anyhow::Result;
-use candle::{Device, Tensor, D};
-use candle_nn::ops::sigmoid;
+use candle_core::{Device, Tensor, D};
 use clap::Parser;
 use core::panic;
 use std::fs::File;
@@ -21,6 +20,10 @@ struct Dataset {
 struct LogisticRegression {
     thetas: Tensor,
     device: Rc<Device>,
+}
+
+fn sigmoid(xs: &Tensor) -> Result<Tensor> {
+    Ok((xs.neg()?.exp()? + 1.0)?.recip()?)
 }
 
 impl LogisticRegression {
