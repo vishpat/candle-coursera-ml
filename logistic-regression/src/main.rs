@@ -3,9 +3,11 @@ use anyhow::Result;
 use candle_core::{Device, Tensor, D};
 use clap::Parser;
 use core::panic;
+use std::char::from_digit;
 use std::fs::File;
-use std::iter;
+use std::{array, iter};
 use std::rc::Rc;
+use polars::prelude::*;
 
 struct Dataset {
     pub training_data: Tensor,
@@ -80,12 +82,24 @@ fn income_dataset(
 ) -> Result<Dataset> {
     // https://www.kaggle.com/datasets/nimapourmoradi/adult-incometrain-test-dataset/data
 
+    let dataset = CsvReader::from_path(training_file_path)?
+        .has_header(true)
+        .finish()?;
+
+    println!("{:?}", dataset);
+
+
+    let dummy1 = Tensor::from_slice(&[1.0, 2.0], (1,), device)?;
+    let dummy2 = Tensor::from_slice(&[1.0, 2.0], (1,), device)?;
+    let dummy3 = Tensor::from_slice(&[1.0, 2.0], (1,), device)?;
+    let dummy4 = Tensor::from_slice(&[1.0, 2.0], (1,), device)?;
+
     Ok(Dataset {
-        training_data: training_data_tensor,
-        training_labels: training_labels_tensor,
-        test_data: test_data_tensor,
-        test_labels: test_labels_tensor,
-        feature_cnt: FEATURE_CNT,
+        training_data: dummy1,
+        training_labels: dummy2,
+        test_data: dummy3,
+        test_labels: dummy4,
+        feature_cnt: 0,
     })
 }
 
@@ -108,17 +122,17 @@ fn main() -> Result<()> {
 
     let dataset = income_dataset(&training_file_path, &test_file_path, &device)?;
 
-    let mut model = LogisticRegression::new(dataset.feature_cnt, device)?;
-
-    for _ in 0..ITERATIONS {
-        model.train(
-            &dataset.training_data,
-            &dataset.training_labels,
-            LEARNING_RATE,
-        )?;
-    }
-
-    let predictions = model.hypothesis(&dataset.test_data)?;
-
+//    let mut model = LogisticRegression::new(dataset.feature_cnt, device)?;
+//
+//    for _ in 0..ITERATIONS {
+//        model.train(
+//            &dataset.training_data,
+//            &dataset.training_labels,
+//            LEARNING_RATE,
+//        )?;
+//    }
+//
+//    let predictions = model.hypothesis(&dataset.test_data)?;
+//
     Ok(())
 }
