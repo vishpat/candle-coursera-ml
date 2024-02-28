@@ -30,16 +30,16 @@ impl LogisticRegression {
     fn cost(&self, x: &Tensor, y: &Tensor) -> Result<f32> {
         let device = Device::cuda_if_available(0)?;
         let (m, n) = x.shape().dims2()?;
-        let H = self.hypothesis(x)?;
-        let log_H = H.log()?;
+        let h = self.hypothesis(x)?;
+        let log_h = h.log()?;
         let one_array = Tensor::from_iter(iter::repeat(1.0f32).take(m), &device)?;
-        let log_1_minus_H = one_array.sub(&H)?.log()?;
+        let log_1_minus_h = one_array.sub(&h)?.log()?;
 
         let one_array = Tensor::from_iter(iter::repeat(1.0f32).take(m), &device)?;
         let one_minus_y = one_array.sub(y)?;
         let cost = y
-            .mul(&log_H)?
-            .add(&one_minus_y.mul(&log_1_minus_H)?)?
+            .mul(&log_h)?
+            .add(&one_minus_y.mul(&log_1_minus_h)?)?
             .broadcast_div(&Tensor::new(-1.0 * m as f32, &device)?)?
             .sum(D::Minus1)?
             .to_scalar()?;
