@@ -1,10 +1,11 @@
 extern crate csv;
 use anyhow::Result;
 use candle_core::{Device, Tensor, D};
+use clap::Parser;
 use core::panic;
+use rand::prelude::*;
 use std::fs::File;
 use std::rc::Rc;
-use clap::Parser;
 
 struct Dataset {
     pub training_data: Tensor,
@@ -39,8 +40,15 @@ impl LinearRegression {
         let cost = deltas
             .mul(&deltas)?
             .mean(D::Minus1)?
-            .div(&Tensor::new(2.0 * m as f32, &self.device)?)?.to_scalar::<f32>()?;
+            .div(&Tensor::new(2.0 * m as f32, &self.device)?)?
+            .to_scalar::<f32>()?;
         Ok(cost)
+    }
+
+    fn loss(&self, y1: &Tensor, y2: &Tensor) -> Result<f32> {
+        let diff = y1.sub(y2)?;
+        let loss = diff.mul(&diff)?.mean(D::Minus1)?.to_scalar::<f32>()?;
+        Ok(loss)
     }
 
     fn train(&mut self, x: &Tensor, y: &Tensor, learning_rate: f32) -> Result<()> {
@@ -74,7 +82,8 @@ fn r2_score(predictions: &Tensor, labels: &Tensor) -> Result<f32, Box<dyn std::e
 }
 
 const LEARNING_RATE: f32 = 0.01;
-const ITERATIONS: i32 = 100000;
+const EPOCHS: i32 = 10000;
+const BATCH_SIZE: usize = 100;
 
 fn insurance_dataset(file_path: &str, device: &Device) -> Result<Dataset> {
     // https://www.kaggle.com/mirichoi0218/insurance
@@ -164,8 +173,9 @@ struct Args {
     #[arg(long)]
     data_csv: String,
 
+    // Print the Cost and Loss at each epoch
     #[arg(long, default_value_t = false)]
-    cost: bool,
+    progress: bool,
 }
 fn main() -> Result<()> {
     let args = Args::parse();
@@ -176,17 +186,33 @@ fn main() -> Result<()> {
     let dataset = insurance_dataset(&file_path, &device)?;
 
     let mut model = LinearRegression::new(dataset.feature_cnt, device)?;
+    let (training_size, _) = dataset.training_data.shape().dims2()?;
+    let n_batches = training_size / BATCH_SIZE;
+    let mut batch_idxs = (0..n_batches).collect::<Vec<usize>>();
 
-    for i in 0..ITERATIONS {
-        if i % 10000 == 0 {
-            let cost = model.cost(&dataset.training_data, &dataset.training_labels)?;
-            println!("cost: {cost}");
+    for epoch in 0..EPOCHS {
+        let mut sum_loss = 0.0;
+        batch_idxs.shuffle(&mut rand::thread_rng());
+        for batch_idx in batch_idxs.iter() {
+            let train_data = dataset
+                .training_data
+                .narrow(0, batch_idx * BATCH_SIZE, BATCH_SIZE)?;
+            let train_labels =
+                dataset
+                    .training_labels
+                    .narrow(0, batch_idx * BATCH_SIZE, BATCH_SIZE)?;
+            model.train(&train_data, &train_labels, LEARNING_RATE)?;
+            let predictions = model.hypothesis(&train_data)?;
+            let loss = model.loss(&predictions, &train_labels)?;
+            sum_loss += loss;
         }
-        model.train(
-            &dataset.training_data,
-            &dataset.training_labels,
-            LEARNING_RATE,
-        )?;
+        if args.progress && epoch % 1000 == 0 {
+            let cost = model.cost(&dataset.training_data, &dataset.training_labels)?;
+            println!(
+                "epoch: {epoch}, cost: {cost},  loss: {}",
+                sum_loss / n_batches as f32
+            );
+        }
     }
 
     let predictions = model.hypothesis(&dataset.test_data)?;
