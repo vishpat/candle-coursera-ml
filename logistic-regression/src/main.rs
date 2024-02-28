@@ -26,10 +26,9 @@ impl LogisticRegression {
         Ok(sigmoid(&x.matmul(&self.thetas.unsqueeze(1)?)?.squeeze(1)?)?)
     }
 
-    #[allow(unused)]
     fn cost(&self, x: &Tensor, y: &Tensor) -> Result<f32> {
         let device = Device::cuda_if_available(0)?;
-        let (m, n) = x.shape().dims2()?;
+        let (m, _) = x.shape().dims2()?;
         let h = self.hypothesis(x)?;
         let log_h = h.log()?;
         let one_array = Tensor::from_iter(iter::repeat(1.0f32).take(m), &device)?;
