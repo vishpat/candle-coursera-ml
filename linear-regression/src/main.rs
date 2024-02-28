@@ -32,15 +32,14 @@ impl LinearRegression {
         Ok(x.matmul(&self.thetas.unsqueeze(1)?)?.squeeze(1)?)
     }
 
-    #[allow(unused)]
-    fn cost(&self, x: &Tensor, y: &Tensor) -> Result<Tensor> {
+    fn cost(&self, x: &Tensor, y: &Tensor) -> Result<f32> {
         let m = y.shape().dims1()?;
         let predictions = self.hypothesis(x)?;
         let deltas = predictions.sub(y)?;
         let cost = deltas
             .mul(&deltas)?
             .mean(D::Minus1)?
-            .div(&Tensor::new(2.0 * m as f32, &self.device)?)?;
+            .div(&Tensor::new(2.0 * m as f32, &self.device)?)?.to_scalar::<f32>()?;
         Ok(cost)
     }
 
@@ -164,6 +163,9 @@ fn insurance_dataset(file_path: &str, device: &Device) -> Result<Dataset> {
 struct Args {
     #[arg(long)]
     data_csv: String,
+
+    #[arg(long, default_value_t = false)]
+    cost: bool,
 }
 fn main() -> Result<()> {
     let args = Args::parse();
@@ -175,7 +177,11 @@ fn main() -> Result<()> {
 
     let mut model = LinearRegression::new(dataset.feature_cnt, device)?;
 
-    for _ in 0..ITERATIONS {
+    for i in 0..ITERATIONS {
+        if i % 10000 == 0 {
+            let cost = model.cost(&dataset.training_data, &dataset.training_labels)?;
+            println!("cost: {cost}");
+        }
         model.train(
             &dataset.training_data,
             &dataset.training_labels,
