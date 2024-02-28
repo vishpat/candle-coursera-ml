@@ -64,6 +64,7 @@ impl LogisticRegression {
 
 const LEARNING_RATE: f32 = 0.01;
 const ITERATIONS: i32 = 10000;
+const DIGIT: u8 = 0; 
 
 fn main() -> Result<()> {
     let device = Rc::new(Device::cuda_if_available(0)?);
@@ -81,7 +82,7 @@ fn main() -> Result<()> {
     let training_labels_vec = training_labels
         .to_vec1::<u8>()?
         .into_iter()
-        .map(|x| if x == 0 { 1.0 } else { 0.0 })
+        .map(|x| if x == DIGIT { 1.0 } else { 0.0 })
         .collect::<Vec<f32>>();
     let len = training_labels_vec.len();
     let training_labels = Tensor::from_vec(training_labels_vec, (len,), &device)?;
@@ -112,7 +113,7 @@ fn main() -> Result<()> {
     let test_labels_vec = test_labels
         .to_vec1::<u8>()?
         .into_iter()
-        .map(|x| if x == 0 { 1f32 } else { 0f32 })
+        .map(|x| if x == DIGIT { 1f32 } else { 0f32 })
         .collect::<Vec<f32>>();
     let len = test_labels_vec.len();
     let test_labels = Tensor::from_vec(test_labels_vec, (len,), &device)?;
