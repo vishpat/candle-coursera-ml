@@ -1,12 +1,8 @@
 extern crate csv;
 use anyhow::Result;
 use candle_core::{Device, Tensor, D};
-use clap::Parser;
-use core::panic;
-use std::char::from_digit;
-use std::fs::File;
+use std::iter;
 use std::rc::Rc;
-use std::{array, iter};
 
 // Implement Logistic Regression model using Gradient Descent
 // https://www.youtube.com/watch?v=4u81xU7BIOc
@@ -31,11 +27,12 @@ impl LogisticRegression {
     }
 
     #[allow(unused)]
-    fn cost(&self, x: &Tensor, y: &Tensor, device: Rc<Device>) -> Result<Tensor> {
+    fn cost(&self, x: &Tensor, y: &Tensor) -> Result<f32> {
+        let device = Device::cuda_if_available(0)?;
         let (m, n) = x.shape().dims2()?;
         let H = self.hypothesis(x)?;
         let log_H = H.log()?;
-        let one_array = Tensor::from_iter(iter::repeat(1.0f32).take(n), &device)?;
+        let one_array = Tensor::from_iter(iter::repeat(1.0f32).take(m), &device)?;
         let log_1_minus_H = one_array.sub(&H)?.log()?;
 
         let one_array = Tensor::from_iter(iter::repeat(1.0f32).take(m), &device)?;
@@ -43,7 +40,9 @@ impl LogisticRegression {
         let cost = y
             .mul(&log_H)?
             .add(&one_minus_y.mul(&log_1_minus_H)?)?
-            .broadcast_div(&Tensor::new(-1.0 * m as f32, &device)?)?;
+            .broadcast_div(&Tensor::new(-1.0 * m as f32, &device)?)?
+            .sum(D::Minus1)?
+            .to_scalar()?;
         Ok(cost)
     }
 
@@ -64,38 +63,75 @@ impl LogisticRegression {
 }
 
 const LEARNING_RATE: f32 = 0.01;
-const ITERATIONS: i32 = 100000;
+const ITERATIONS: i32 = 10000;
 
 fn main() -> Result<()> {
     let device = Rc::new(Device::cuda_if_available(0)?);
 
     let dataset = candle_datasets::vision::mnist::load()?;
-    let train_images = dataset.train_images;
-    let train_labels = dataset.train_labels;
-
-    println!("Training data shape: {}", train_images);
-    println!("Training labels shape: {}", train_labels);
-
-    let train_labels_vec = train_labels
+    let (m, n) = dataset.train_images.shape().dims2()?;
+    let training_images = dataset.train_images;
+    let training_images_vec = training_images
+        .to_vec2::<f32>()?
+        .into_iter()
+        .flatten()
+        .collect::<Vec<f32>>();
+    let training_images = Tensor::from_vec(training_images_vec, (m, n), &device)?;
+    let training_labels = dataset.train_labels;
+    let training_labels_vec = training_labels
         .to_vec1::<u8>()?
         .into_iter()
         .map(|x| if x == 0 { 1.0 } else { 0.0 })
         .collect::<Vec<f32>>();
-    println!("{:?}", train_labels_vec);
-    let len = train_labels_vec.len();
-    let train_labels = Tensor::from_vec(train_labels_vec, (len,), &device)?;
+    let len = training_labels_vec.len();
+    let training_labels = Tensor::from_vec(training_labels_vec, (len,), &device)?;
 
-    //    let mut model = LogisticRegression::new(dataset.feature_cnt, device)?;
-    //
-    //    for _ in 0..ITERATIONS {
-    //        model.train(
-    //            &dataset.training_data,
-    //            &dataset.training_labels,
-    //            LEARNING_RATE,
-    //        )?;
-    //    }
-    //
-    //    let predictions = model.hypothesis(&dataset.test_data)?;
-    //
+    let mut model = LogisticRegression::new(n, device.clone())?;
+
+    let mut cost: f32 = 0.0;
+    for i in 0..ITERATIONS {
+        cost = model.cost(&training_images, &training_labels)?;
+
+        if i % 1000 == 0 {
+            println!("Cost: {}", cost);
+        }
+
+        model.train(&training_images, &training_labels, LEARNING_RATE)?;
+    }
+    println!("Cost: {}", cost);
+
+    let test_images = dataset.test_images;
+    let (m, n) = test_images.shape().dims2()?;
+    let test_images_vec = test_images
+        .to_vec2::<f32>()?
+        .into_iter()
+        .flatten()
+        .collect::<Vec<f32>>();
+    let test_images = Tensor::from_vec(test_images_vec, (m, n), &device)?;
+    let test_labels = dataset.test_labels;
+    let test_labels_vec = test_labels
+        .to_vec1::<u8>()?
+        .into_iter()
+        .map(|x| if x == 0 { 1f32 } else { 0f32 })
+        .collect::<Vec<f32>>();
+    let len = test_labels_vec.len();
+    let test_labels = Tensor::from_vec(test_labels_vec, (len,), &device)?;
+    let predictions = model.hypothesis(&test_images)?;
+    let predictions_vec = predictions
+        .to_vec1::<f32>()?
+        .into_iter()
+        .map(|x| if x > 0.5 { 1f32 } else { 0f32 })
+        .collect::<Vec<f32>>();
+    let predictions = Tensor::from_vec(predictions_vec, (len,), &device)?;
+
+    let accuracy = predictions
+        .eq(&test_labels)?
+        .to_vec1::<u8>()?
+        .into_iter()
+        .map(f32::from)
+        .sum::<f32>()
+        / len as f32;
+    println!("Accuracy: {}", accuracy);
+
     Ok(())
 }
