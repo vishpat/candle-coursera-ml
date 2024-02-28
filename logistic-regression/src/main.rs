@@ -3,6 +3,8 @@ use anyhow::Result;
 use candle_core::{Device, Tensor, D};
 use std::iter;
 use std::rc::Rc;
+use clap::Parser;
+use rand::prelude::*;
 
 // Implement Logistic Regression model using Gradient Descent
 // https://www.youtube.com/watch?v=4u81xU7BIOc
@@ -24,6 +26,12 @@ impl LogisticRegression {
 
     fn hypothesis(&self, x: &Tensor) -> Result<Tensor> {
         Ok(sigmoid(&x.matmul(&self.thetas.unsqueeze(1)?)?.squeeze(1)?)?)
+    }
+
+    fn loss(&self, y1: &Tensor, y2: &Tensor) -> Result<f32> {
+        let diff = y1.sub(y2)?;
+        let loss = diff.mul(&diff)?.mean(D::Minus1)?.to_scalar::<f32>()?;
+        Ok(loss)
     }
 
     fn cost(&self, x: &Tensor, y: &Tensor) -> Result<f32> {
@@ -62,10 +70,20 @@ impl LogisticRegression {
 }
 
 const LEARNING_RATE: f32 = 0.01;
-const ITERATIONS: i32 = 10000;
+const EPOCHS: i32 = 10000;
 const DIGIT: u8 = 0; 
+const BATCH_SIZE: usize = 100;
+
+#[derive(Parser, Debug)]
+#[command(author, version, about, long_about = None)]
+struct Args {
+    // Print the Cost and Loss at each epoch
+    #[arg(long, default_value_t = false)]
+    progress: bool,
+}
 
 fn main() -> Result<()> {
+    let args = Args::parse();
     let device = Rc::new(Device::cuda_if_available(0)?);
 
     let dataset = candle_datasets::vision::mnist::load()?;
@@ -87,18 +105,33 @@ fn main() -> Result<()> {
     let training_labels = Tensor::from_vec(training_labels_vec, (len,), &device)?;
 
     let mut model = LogisticRegression::new(n, device.clone())?;
+    let (training_size, _) = training_images.shape().dims2()?;
+    let n_batches = training_size / BATCH_SIZE;
+    let mut batch_idxs = (0..n_batches).collect::<Vec<usize>>();
 
-    let mut cost: f32 = 0.0;
-    for i in 0..ITERATIONS {
-        cost = model.cost(&training_images, &training_labels)?;
-
-        if i % 1000 == 0 {
-            println!("Cost: {}", cost);
+    for epoch in 0..EPOCHS {
+        let mut sum_loss = 0.0;
+        batch_idxs.shuffle(&mut rand::thread_rng());
+        for batch_idx in batch_idxs.iter() {
+            let train_data = 
+                training_images 
+                .narrow(0, batch_idx * BATCH_SIZE, BATCH_SIZE)?;
+            let train_labels =
+                    training_labels
+                    .narrow(0, batch_idx * BATCH_SIZE, BATCH_SIZE)?;
+            model.train(&train_data, &train_labels, LEARNING_RATE)?;
+            let predictions = model.hypothesis(&train_data)?;
+            let loss = model.loss(&predictions, &train_labels)?;
+            sum_loss += loss;
         }
-
-        model.train(&training_images, &training_labels, LEARNING_RATE)?;
+        if args.progress && epoch % 1000 == 0 {
+            let cost = model.cost(&training_images, &training_labels)?;
+            println!(
+                "epoch: {epoch}, cost: {cost},  loss: {}",
+                sum_loss / n_batches as f32
+            );
+        }
     }
-    println!("Cost: {}", cost);
 
     let test_images = dataset.test_images;
     let (m, n) = test_images.shape().dims2()?;

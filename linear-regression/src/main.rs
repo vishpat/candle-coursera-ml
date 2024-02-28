@@ -81,8 +81,6 @@ fn r2_score(predictions: &Tensor, labels: &Tensor) -> Result<f32, Box<dyn std::e
     Ok(1.0 - tmp)
 }
 
-const LEARNING_RATE: f32 = 0.01;
-const EPOCHS: i32 = 10000;
 const BATCH_SIZE: usize = 100;
 
 fn insurance_dataset(file_path: &str, device: &Device) -> Result<Dataset> {
@@ -176,6 +174,14 @@ struct Args {
     // Print the Cost and Loss at each epoch
     #[arg(long, default_value_t = false)]
     progress: bool,
+
+    // The learning rate
+    #[arg(long, default_value = "0.01")]
+    learning_rate: f32,
+
+    // The number of epochs
+    #[arg(long, default_value = "10000")]
+    epochs: i32,
 }
 fn main() -> Result<()> {
     let args = Args::parse();
@@ -190,7 +196,7 @@ fn main() -> Result<()> {
     let n_batches = training_size / BATCH_SIZE;
     let mut batch_idxs = (0..n_batches).collect::<Vec<usize>>();
 
-    for epoch in 0..EPOCHS {
+    for epoch in 0..args.epochs {
         let mut sum_loss = 0.0;
         batch_idxs.shuffle(&mut rand::thread_rng());
         for batch_idx in batch_idxs.iter() {
@@ -201,7 +207,7 @@ fn main() -> Result<()> {
                 dataset
                     .training_labels
                     .narrow(0, batch_idx * BATCH_SIZE, BATCH_SIZE)?;
-            model.train(&train_data, &train_labels, LEARNING_RATE)?;
+            model.train(&train_data, &train_labels, args.learning_rate)?;
             let predictions = model.hypothesis(&train_data)?;
             let loss = model.loss(&predictions, &train_labels)?;
             sum_loss += loss;
