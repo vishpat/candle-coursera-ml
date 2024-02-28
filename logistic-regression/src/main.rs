@@ -1,10 +1,10 @@
 extern crate csv;
 use anyhow::Result;
 use candle_core::{Device, Tensor, D};
-use std::iter;
-use std::rc::Rc;
 use clap::Parser;
 use rand::prelude::*;
+use std::iter;
+use std::rc::Rc;
 
 // Implement Logistic Regression model using Gradient Descent
 // https://www.youtube.com/watch?v=4u81xU7BIOc
@@ -69,9 +69,6 @@ impl LogisticRegression {
     }
 }
 
-const LEARNING_RATE: f32 = 0.01;
-const EPOCHS: i32 = 10000;
-const DIGIT: u8 = 0; 
 const BATCH_SIZE: usize = 100;
 
 #[derive(Parser, Debug)]
@@ -80,6 +77,17 @@ struct Args {
     // Print the Cost and Loss at each epoch
     #[arg(long, default_value_t = false)]
     progress: bool,
+    // The learning rate
+    #[arg(long, default_value = "0.01")]
+    learning_rate: f32,
+
+    // The number of epochs
+    #[arg(long, default_value = "10000")]
+    epochs: i32,
+
+    // The digit to classify
+    #[arg(long, default_value = "0")]
+    digit: u8,
 }
 
 fn main() -> Result<()> {
@@ -99,7 +107,7 @@ fn main() -> Result<()> {
     let training_labels_vec = training_labels
         .to_vec1::<u8>()?
         .into_iter()
-        .map(|x| if x == DIGIT { 1.0 } else { 0.0 })
+        .map(|x| if x == args.digit { 1.0 } else { 0.0 })
         .collect::<Vec<f32>>();
     let len = training_labels_vec.len();
     let training_labels = Tensor::from_vec(training_labels_vec, (len,), &device)?;
@@ -109,17 +117,13 @@ fn main() -> Result<()> {
     let n_batches = training_size / BATCH_SIZE;
     let mut batch_idxs = (0..n_batches).collect::<Vec<usize>>();
 
-    for epoch in 0..EPOCHS {
+    for epoch in 0..args.epochs {
         let mut sum_loss = 0.0;
         batch_idxs.shuffle(&mut rand::thread_rng());
         for batch_idx in batch_idxs.iter() {
-            let train_data = 
-                training_images 
-                .narrow(0, batch_idx * BATCH_SIZE, BATCH_SIZE)?;
-            let train_labels =
-                    training_labels
-                    .narrow(0, batch_idx * BATCH_SIZE, BATCH_SIZE)?;
-            model.train(&train_data, &train_labels, LEARNING_RATE)?;
+            let train_data = training_images.narrow(0, batch_idx * BATCH_SIZE, BATCH_SIZE)?;
+            let train_labels = training_labels.narrow(0, batch_idx * BATCH_SIZE, BATCH_SIZE)?;
+            model.train(&train_data, &train_labels, args.learning_rate)?;
             let predictions = model.hypothesis(&train_data)?;
             let loss = model.loss(&predictions, &train_labels)?;
             sum_loss += loss;
@@ -145,7 +149,7 @@ fn main() -> Result<()> {
     let test_labels_vec = test_labels
         .to_vec1::<u8>()?
         .into_iter()
-        .map(|x| if x == DIGIT { 1f32 } else { 0f32 })
+        .map(|x| if x == args.digit { 1f32 } else { 0f32 })
         .collect::<Vec<f32>>();
     let len = test_labels_vec.len();
     let test_labels = Tensor::from_vec(test_labels_vec, (len,), &device)?;
