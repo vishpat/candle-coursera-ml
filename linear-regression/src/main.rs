@@ -47,15 +47,28 @@ impl LinearRegression {
         Ok(loss)
     }
 
-    fn train(&mut self, x: &Tensor, y: &Tensor, learning_rate: f32) -> Result<()> {
+    fn train(
+        &mut self,
+        x: &Tensor,
+        y: &Tensor,
+        learning_rate: f32,
+        regularization: f32,
+    ) -> Result<()> {
         let m = y.shape().dims1()?;
         let predictions = self.hypothesis(x)?;
         let deltas = predictions.sub(y)?;
+        let regularization = self
+            .weights
+            .broadcast_mul(&Tensor::new(regularization / m as f32, &self.device)?)?;
+
         let gradient = x
             .t()?
             .matmul(&deltas.unsqueeze(D::Minus1)?)?
             .broadcast_div(&Tensor::new(m as f32, &self.device)?)?;
-        let gradient = gradient.squeeze(D::Minus1)?.squeeze(D::Minus1)?;
+        let gradient = gradient
+            .squeeze(D::Minus1)?
+            .squeeze(D::Minus1)?
+            .add(&regularization)?;
         self.weights = self
             .weights
             .sub(&gradient.broadcast_mul(&Tensor::new(learning_rate, &self.device)?)?)?;
@@ -178,6 +191,10 @@ struct Args {
     #[arg(long, default_value = "0.01")]
     learning_rate: f32,
 
+    // The regularization parameter
+    #[arg(long, default_value = "0.01")]
+    regularization: f32,
+
     // The number of epochs
     #[arg(long, default_value = "10000")]
     epochs: i32,
@@ -205,7 +222,12 @@ fn main() -> Result<()> {
                 dataset
                     .training_labels
                     .narrow(0, batch_idx * BATCH_SIZE, BATCH_SIZE)?;
-            model.train(&train_data, &train_labels, args.learning_rate)?;
+            model.train(
+                &train_data,
+                &train_labels,
+                args.learning_rate,
+                args.regularization,
+            )?;
             let predictions = model.hypothesis(&train_data)?;
             let loss = model.loss(&predictions, &train_labels)?;
             sum_loss += loss;
