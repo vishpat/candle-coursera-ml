@@ -3,13 +3,13 @@ use anyhow::Result;
 use candle_core::{Device, Tensor, D};
 use clap::Parser;
 use rand::prelude::*;
-use std::iter;
 use std::rc::Rc;
 
 // Implement Logistic Regression model using Gradient Descent
 // https://www.youtube.com/watch?v=4u81xU7BIOc
 struct LogisticRegression {
-    thetas: Tensor,
+    weights: Tensor,
+    bias: Tensor,
     device: Rc<Device>,
 }
 
@@ -19,38 +19,28 @@ fn sigmoid(xs: &Tensor) -> Result<Tensor> {
 
 impl LogisticRegression {
     fn new(feature_cnt: usize, device: Rc<Device>) -> Result<Self> {
-        let thetas: Vec<f32> = vec![0.0; feature_cnt];
-        let thetas = Tensor::from_vec(thetas, (feature_cnt,), &device)?;
-        Ok(Self { thetas, device })
+        let weights: Vec<f32> = vec![0.0; feature_cnt];
+        let weights = Tensor::from_vec(weights, (feature_cnt,), &device)?;
+        let bias = Tensor::new(0.0f32, &device)?;
+        Ok(Self {
+            weights,
+            bias,
+            device,
+        })
     }
 
     fn hypothesis(&self, x: &Tensor) -> Result<Tensor> {
-        Ok(sigmoid(&x.matmul(&self.thetas.unsqueeze(1)?)?.squeeze(1)?)?)
+        Ok(sigmoid(
+            &x.matmul(&self.weights.unsqueeze(1)?)?
+                .squeeze(1)?
+                .broadcast_add(&self.bias)?,
+        )?)
     }
 
     fn loss(&self, y1: &Tensor, y2: &Tensor) -> Result<f32> {
         let diff = y1.sub(y2)?;
         let loss = diff.mul(&diff)?.mean(D::Minus1)?.to_scalar::<f32>()?;
         Ok(loss)
-    }
-
-    fn cost(&self, x: &Tensor, y: &Tensor) -> Result<f32> {
-        let device = Device::cuda_if_available(0)?;
-        let (m, _) = x.shape().dims2()?;
-        let h = self.hypothesis(x)?;
-        let log_h = h.log()?;
-        let one_array = Tensor::from_iter(iter::repeat(1.0f32).take(m), &device)?;
-        let log_1_minus_h = one_array.sub(&h)?.log()?;
-
-        let one_array = Tensor::from_iter(iter::repeat(1.0f32).take(m), &device)?;
-        let one_minus_y = one_array.sub(y)?;
-        let cost = y
-            .mul(&log_h)?
-            .add(&one_minus_y.mul(&log_1_minus_h)?)?
-            .broadcast_div(&Tensor::new(-1.0 * m as f32, &device)?)?
-            .sum(D::Minus1)?
-            .to_scalar()?;
-        Ok(cost)
     }
 
     fn train(&mut self, x: &Tensor, y: &Tensor, learning_rate: f32) -> Result<()> {
@@ -62,8 +52,12 @@ impl LogisticRegression {
             .matmul(&deltas.unsqueeze(D::Minus1)?)?
             .broadcast_div(&Tensor::new(m as f32, &self.device)?)?;
         let gradient = gradient.squeeze(D::Minus1)?.squeeze(D::Minus1)?;
-        self.thetas = self
-            .thetas
+        self.weights = self
+            .weights
+            .sub(&gradient.broadcast_mul(&Tensor::new(learning_rate, &self.device)?)?)?;
+        let gradient = deltas.mean(D::Minus1)?;
+        self.bias = self
+            .bias
             .sub(&gradient.broadcast_mul(&Tensor::new(learning_rate, &self.device)?)?)?;
         Ok(())
     }
@@ -129,9 +123,8 @@ fn main() -> Result<()> {
             sum_loss += loss;
         }
         if args.progress && epoch % 1000 == 0 {
-            let cost = model.cost(&training_images, &training_labels)?;
             println!(
-                "epoch: {epoch}, cost: {cost},  loss: {}",
+                "epoch: {epoch}, loss: {}",
                 sum_loss / n_batches as f32
             );
         }
