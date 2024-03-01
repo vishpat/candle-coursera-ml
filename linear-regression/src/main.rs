@@ -18,31 +18,27 @@ struct Dataset {
 // Implement Linear Regression model using Gradient Descent
 // https://www.youtube.com/watch?v=UVCFaaEBnTE
 struct LinearRegression {
-    thetas: Tensor,
+    weights: Tensor,
+    bias: Tensor,
     device: Rc<Device>,
 }
 
 impl LinearRegression {
     fn new(feature_cnt: usize, device: Rc<Device>) -> Result<Self> {
-        let thetas: Vec<f32> = vec![0.0; feature_cnt];
-        let thetas = Tensor::from_vec(thetas, (feature_cnt,), &device)?;
-        Ok(Self { thetas, device })
+        let weights: Vec<f32> = vec![0.0; feature_cnt];
+        let weights = Tensor::from_vec(weights, (feature_cnt,), &device)?;
+        let bias = Tensor::new(0.0f32, &device)?;
+        Ok(Self {
+            weights,
+            bias,
+            device,
+        })
     }
 
     fn hypothesis(&self, x: &Tensor) -> Result<Tensor> {
-        Ok(x.matmul(&self.thetas.unsqueeze(1)?)?.squeeze(1)?)
-    }
-
-    fn cost(&self, x: &Tensor, y: &Tensor) -> Result<f32> {
-        let m = y.shape().dims1()?;
-        let predictions = self.hypothesis(x)?;
-        let deltas = predictions.sub(y)?;
-        let cost = deltas
-            .mul(&deltas)?
-            .mean(D::Minus1)?
-            .div(&Tensor::new(2.0 * m as f32, &self.device)?)?
-            .to_scalar::<f32>()?;
-        Ok(cost)
+        Ok(x.matmul(&self.weights.unsqueeze(1)?)?
+            .squeeze(1)?
+            .broadcast_add(&self.bias)?)
     }
 
     fn loss(&self, y1: &Tensor, y2: &Tensor) -> Result<f32> {
@@ -60,8 +56,12 @@ impl LinearRegression {
             .matmul(&deltas.unsqueeze(D::Minus1)?)?
             .broadcast_div(&Tensor::new(m as f32, &self.device)?)?;
         let gradient = gradient.squeeze(D::Minus1)?.squeeze(D::Minus1)?;
-        self.thetas = self
-            .thetas
+        self.weights = self
+            .weights
+            .sub(&gradient.broadcast_mul(&Tensor::new(learning_rate, &self.device)?)?)?;
+        let gradient = deltas.mean(D::Minus1)?;
+        self.bias = self
+            .bias
             .sub(&gradient.broadcast_mul(&Tensor::new(learning_rate, &self.device)?)?)?;
         Ok(())
     }
@@ -91,7 +91,7 @@ fn insurance_dataset(file_path: &str, device: &Device) -> Result<Dataset> {
     let mut data: Vec<Vec<f32>> = vec![];
     let mut labels: Vec<f32> = vec![];
 
-    const FEATURE_CNT: usize = 7;
+    const FEATURE_CNT: usize = 6;
     const MALE: f32 = 0.5;
     const FEMALE: f32 = -0.5;
 
@@ -127,8 +127,7 @@ fn insurance_dataset(file_path: &str, device: &Device) -> Result<Dataset> {
         };
         let charges: f32 = record[6].parse()?;
 
-        // IMPORTANT: The first column of the row needs to be 1.0 for the bias term
-        let row = vec![1.0, age, gender, bmi, children, smoker, region];
+        let row = vec![age, gender, bmi, children, smoker, region];
         data.push(row);
 
         let label = charges;
@@ -188,7 +187,6 @@ fn main() -> Result<()> {
     let file_path = args.data_csv;
 
     let device = Rc::new(Device::cuda_if_available(0)?);
-
     let dataset = insurance_dataset(&file_path, &device)?;
 
     let mut model = LinearRegression::new(dataset.feature_cnt, device)?;
@@ -213,11 +211,7 @@ fn main() -> Result<()> {
             sum_loss += loss;
         }
         if args.progress && epoch % 1000 == 0 {
-            let cost = model.cost(&dataset.training_data, &dataset.training_labels)?;
-            println!(
-                "epoch: {epoch}, cost: {cost},  loss: {}",
-                sum_loss / n_batches as f32
-            );
+            println!("epoch: {epoch}, loss: {}", sum_loss / n_batches as f32);
         }
     }
 
