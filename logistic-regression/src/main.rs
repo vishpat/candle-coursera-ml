@@ -1,6 +1,6 @@
 extern crate csv;
 use anyhow::Result;
-use candle::{Device, Tensor, D};
+use candle_core::{Device, Tensor, D};
 use clap::Parser;
 use rand::prelude::*;
 use std::rc::Rc;
@@ -107,14 +107,8 @@ fn main() -> Result<()> {
     let device = Rc::new(Device::cuda_if_available(0)?);
 
     let dataset = candle_datasets::vision::mnist::load()?;
-    let (m, n) = dataset.train_images.shape().dims2()?;
+    let (_, n) = dataset.train_images.shape().dims2()?;
     let training_images = dataset.train_images;
-    let training_images_vec = training_images
-        .to_vec2::<f32>()?
-        .into_iter()
-        .flatten()
-        .collect::<Vec<f32>>();
-    let training_images = Tensor::from_vec(training_images_vec, (m, n), &device)?;
     let training_labels = dataset.train_labels;
     let training_labels_vec = training_labels
         .to_vec1::<u8>()?
@@ -151,13 +145,6 @@ fn main() -> Result<()> {
     }
 
     let test_images = dataset.test_images;
-    let (m, n) = test_images.shape().dims2()?;
-    let test_images_vec = test_images
-        .to_vec2::<f32>()?
-        .into_iter()
-        .flatten()
-        .collect::<Vec<f32>>();
-    let test_images = Tensor::from_vec(test_images_vec, (m, n), &device)?;
     let test_labels = dataset.test_labels;
     let test_labels_vec = test_labels
         .to_vec1::<u8>()?
