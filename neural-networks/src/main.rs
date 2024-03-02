@@ -21,10 +21,10 @@ fn load_tensors(csv: &str, device: &Device) -> Result<(Tensor, Tensor)> {
     let mut rdr = csv::Reader::from_path(csv)?;
     for result in rdr.records() {
         let record = result?;
-        let label = record.get(0).unwrap().parse::<f32>()?;
+        let label = record.get(0).unwrap().parse::<u32>()?;
         let mut features = Vec::new();
         for i in 1..record.len() {
-            features.push(record.get(i).unwrap().parse::<f32>()?);
+            features.push(record.get(i).unwrap().parse::<f32>()? / 255.0);
         }
         labels.push(label);
         data.push(features);
@@ -122,11 +122,13 @@ fn main() -> Result<()> {
             .sum_all()?
             .to_scalar::<f32>()?;
         let test_accuracy = sum_ok / test_labels.dims1()? as f32;
-        println!(
-            "{epoch:4} train loss: {:8.5} test acc: {:5.2}%",
-            loss.to_scalar::<f32>()?,
-            100. * test_accuracy
-        );
+        if args.progress && epoch % 100 == 0 {
+            println!(
+                "{epoch:4} train loss: {:8.5} test acc: {:5.2}%",
+                loss.to_scalar::<f32>()?,
+                100. * test_accuracy
+            );
+        }
     }
 
     Ok(())
