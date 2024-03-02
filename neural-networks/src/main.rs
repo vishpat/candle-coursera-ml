@@ -70,7 +70,7 @@ struct Args {
     regularization: f32,
 
     // The number of epochs
-    #[arg(long, default_value = "10000")]
+    #[arg(long, default_value = "5000")]
     epochs: i32,
 }
 
