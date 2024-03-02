@@ -1,5 +1,6 @@
 [workspace]
 members = [
 "logistic-regression", 
-"linear-regression"]
+"linear-regression",
+"neural-networks"]
 resolver="2"

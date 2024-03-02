@@ -1,5 +1,5 @@
 use anyhow::Result;
-use candle_core::{Device, Tensor, D};
+use candle::{Device, Tensor, D};
 use candle_nn::{loss, ops, Conv2d, Linear, Module, ModuleT, Optimizer, VarBuilder, VarMap};
 use clap::{Parser, ValueEnum};
 use rand::prelude::*;
