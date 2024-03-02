@@ -1,6 +1,6 @@
 extern crate csv;
 use anyhow::Result;
-use candle_core::{Device, Tensor, D};
+use candle::{Device, Tensor, D};
 use clap::Parser;
 use core::panic;
 use rand::prelude::*;
