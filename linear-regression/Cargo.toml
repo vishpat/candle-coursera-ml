@@ -8,7 +8,7 @@ edition = "2021"
 [dependencies]
 csv = "1.1.6"
 ndarray = "0.15.3"
-candle = { git = "https://github.com/huggingface/candle", package = "candle-core"}
+candle = { git = "https://github.com/huggingface/candle", package = "candle-core", features = ["cuda"]}
 anyhow = "1.0.40"
 clap = { version = "4.5.1", features = ["derive"] }
 rand = "0.8.5"
