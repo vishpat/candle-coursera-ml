@@ -108,8 +108,8 @@ fn main() -> Result<()> {
 
     let dataset = candle_datasets::vision::mnist::load()?;
     let (_, n) = dataset.train_images.shape().dims2()?;
-    let training_images = dataset.train_images;
-    let training_labels = dataset.train_labels;
+    let training_images = dataset.train_images.to_device(&device)?;
+    let training_labels = dataset.train_labels.to_device(&device)?;
     let training_labels_vec = training_labels
         .to_vec1::<u8>()?
         .into_iter()
@@ -117,6 +117,16 @@ fn main() -> Result<()> {
         .collect::<Vec<f32>>();
     let len = training_labels_vec.len();
     let training_labels = Tensor::from_vec(training_labels_vec, (len,), &device)?;
+
+    let test_images = dataset.test_images.to_device(&device)?;
+    let test_labels = dataset.test_labels.to_device(&device)?;
+    let test_labels_vec = test_labels
+        .to_vec1::<u8>()?
+        .into_iter()
+        .map(|x| if x == args.digit { 1f32 } else { 0f32 })
+        .collect::<Vec<f32>>();
+    let len = test_labels_vec.len();
+    let test_labels = Tensor::from_vec(test_labels_vec, (len,), &device)?;
 
     let mut model = LogisticRegression::new(n, device.clone())?;
     let (training_size, _) = training_images.shape().dims2()?;
@@ -140,35 +150,28 @@ fn main() -> Result<()> {
             sum_loss += loss;
         }
         if args.progress && epoch % 1000 == 0 {
-            println!("epoch: {epoch}, loss: {}", sum_loss / n_batches as f32);
+            let predictions = model.hypothesis(&test_images)?;
+            let predictions_vec = predictions
+                .to_vec1::<f32>()?
+                .into_iter()
+                .map(|x| if x > 0.5 { 1f32 } else { 0f32 })
+                .collect::<Vec<f32>>();
+            let predictions = Tensor::from_vec(predictions_vec, (len,), &device)?;
+
+            let accuracy = predictions
+                .eq(&test_labels)?
+                .to_vec1::<u8>()?
+                .into_iter()
+                .map(f32::from)
+                .sum::<f32>()
+                / len as f32;
+            println!(
+                "epoch: {epoch}, loss: {}, Test Accuracy: {}",
+                sum_loss / n_batches as f32,
+                accuracy
+            );
         }
     }
-
-    let test_images = dataset.test_images;
-    let test_labels = dataset.test_labels;
-    let test_labels_vec = test_labels
-        .to_vec1::<u8>()?
-        .into_iter()
-        .map(|x| if x == args.digit { 1f32 } else { 0f32 })
-        .collect::<Vec<f32>>();
-    let len = test_labels_vec.len();
-    let test_labels = Tensor::from_vec(test_labels_vec, (len,), &device)?;
-    let predictions = model.hypothesis(&test_images)?;
-    let predictions_vec = predictions
-        .to_vec1::<f32>()?
-        .into_iter()
-        .map(|x| if x > 0.5 { 1f32 } else { 0f32 })
-        .collect::<Vec<f32>>();
-    let predictions = Tensor::from_vec(predictions_vec, (len,), &device)?;
-
-    let accuracy = predictions
-        .eq(&test_labels)?
-        .to_vec1::<u8>()?
-        .into_iter()
-        .map(f32::from)
-        .sum::<f32>()
-        / len as f32;
-    println!("Accuracy: {}", accuracy);
 
     Ok(())
 }
