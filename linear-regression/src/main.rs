@@ -233,13 +233,13 @@ fn main() -> Result<()> {
             sum_loss += loss;
         }
         if args.progress && epoch % 1000 == 0 {
-            println!("epoch: {epoch}, loss: {}", sum_loss / n_batches as f32);
+            let predictions = model.hypothesis(&dataset.test_data)?;
+            let r2 = r2_score(&predictions, &dataset.test_labels).unwrap();
+            println!("epoch: {epoch}, loss: {}, accuracy: {}", sum_loss / n_batches as f32, r2);
         }
     }
 
-    let predictions = model.hypothesis(&dataset.test_data)?;
-    let r2 = r2_score(&predictions, &dataset.test_labels).unwrap();
-    println!("r2: {r2}");
+    
 
     Ok(())
 }
