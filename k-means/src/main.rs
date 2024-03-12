@@ -10,44 +10,59 @@ fn cdist(x1: &Tensor, x2: &Tensor) -> Result<Tensor> {
     Ok(x1.broadcast_sub(&x2)?.sqr()?.sum(D::Minus1)?.sqrt()?)
 }
 
-fn k_means(x: &Tensor, k: usize, max_iter: i64, device: &Device) -> Result<(Tensor, Tensor)> {
-    let (n, d) = x.dims2()?;
-    let mut rng = rand::thread_rng();
-    let indices = (0..n).collect::<Vec<_>>();
-    indices.shuffle(rng);
-    let centroid_idx = indices[..k]
-        .to_vec()
-        .into_iter()
-        .map(|x| x as i64)
-        .collect::<Vec<_>>();
-    let centroid_idx_tensor = Tensor::from_slice(&centroid_idx.as_slice(), (k,), device)?;
-    let mut centers = x.index_select(&centroid_idx_tensor, 2)?;
-
-    for _ in 0..max_iter {
-        let dist = cdist(x, &centers)?;
-        let cluster_assignments = dist.argmin(D::Minus1)?;
-        let mut new_centers = Tensor::zeros_like(&centers)?;
-        let mut counts = Tensor::zeros(k, D::Int64)?;
-        for i in 0..n {
-            let label = labels.get(i)?;
-            new_centers.index_add_1(label, x.get(i)?)?;
-            counts.index_add_1(label, &Tensor::ones(1, D::Int64)?)?;
+fn load_dataset(file_path: &str, device: &Device) -> Result<Tensor> {
+    let mut rdr = csv::Reader::from_path(file_path)?;
+    let mut data = Vec::new();
+    for result in rdr.records() {
+        let record = result?;
+        let mut row = vec![];
+        for i in 1..5 {
+            row.push(record[i].parse::<f64>()?);
         }
-        for i in 0..k {
-            if counts.get(i)? > 0 {
-                new_centers.index_div_1(i, counts.get(i)?)?;
-            }
-        }
-        if (new_centers - centers).abs().max(D::Minus1)?.get(0)? < 1e-6 {
-            break;
-        }
-        centers = new_centers;
+        data.push(row);
     }
-    let dist = cdist(x, &centers)?;
-    let (_, labels) = dist.min(D::Minus1, true)?;
-    Ok((centers, labels))
+    let feature_cnt = data[0].len();
+    let sample_cnt = data.len();
+    let data = data.into_iter().flatten().collect::<Vec<_>>();
+    let data = Tensor::from_slice(&data.as_slice(), (sample_cnt, feature_cnt), device)?;
+    Ok(data)
 }
 
-fn main() {
-    println!("Hello, world!");
+//fn k_means(x: &Tensor, k: usize, max_iter: i64, device: &Device) -> Result<(Tensor, Tensor)> {
+//    let (n, d) = x.dims2()?;
+//    let mut rng = rand::thread_rng();
+//    let indices = (0..n).collect::<Vec<_>>();
+//    indices.shuffle(rng);
+//    let centroid_idx = indices[..k]
+//        .to_vec()
+//        .into_iter()
+//        .map(|x| x as i64)
+//        .collect::<Vec<_>>();
+//    let centroid_idx_tensor = Tensor::from_slice(&centroid_idx.as_slice(), (k,), device)?;
+//    let mut centers = x.index_select(&centroid_idx_tensor, 2)?;
+//
+//    for _ in 0..max_iter {
+//        let dist = cdist(x, &centers)?;
+//        let cluster_assignments = dist.argmin(D::Minus1)?;
+//        let mut new_centers = Tensor::zeros_like(&centers)?;
+//
+//        centers = new_centers;
+//    }
+//    let dist = cdist(x, &centers)?;
+//    Ok((centers, labels))
+//}
+
+#[derive(Parser, Debug)]
+#[command(author, version, about, long_about = None)]
+struct Args {
+    // Data CSV file from https://www.kaggle.com/datasets/uciml/iris/data
+    #[arg(long)]
+    data_csv: String,
+}
+fn main() -> Result<()> {
+    let args = Args::parse();
+    let device = Device::cuda_if_available(0)?;
+    let data = load_dataset(&args.data_csv, &device).unwrap();
+    println!("{:?}", data);
+    Ok(())
 }
