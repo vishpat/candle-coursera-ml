@@ -28,8 +28,8 @@ fn load_dataset(file_path: &str, device: &Device) -> Result<Tensor> {
     Ok(data)
 }
 
-fn k_means(x: &Tensor, k: usize, max_iter: i64, device: &Device) -> Result<(Tensor, Tensor)> {
-    let (n, _) = x.dims2()?;
+fn k_means(data: &Tensor, k: usize, max_iter: i64, device: &Device) -> Result<(Tensor, Tensor)> {
+    let (n, _) = data.dims2()?;
     let mut rng = rand::thread_rng();
     let mut indices = (0..n).collect::<Vec<_>>();
     indices.shuffle(&mut rng);
@@ -39,11 +39,12 @@ fn k_means(x: &Tensor, k: usize, max_iter: i64, device: &Device) -> Result<(Tens
         .copied()
         .map(|x| x as i64)
         .collect::<Vec<_>>();
+    
     let centroid_idx_tensor = Tensor::from_slice(centroid_idx.as_slice(), (k,), device)?;
-    let mut centers = x.index_select(&centroid_idx_tensor, 2)?;
+    let mut centers = data.index_select(&centroid_idx_tensor, 0)?;
     let mut cluster_assignments = Tensor::zeros((n,), DType::U32, device)?;
     for _ in 0..max_iter {
-        let dist = cdist(x, &centers)?;
+        let dist = cdist(data, &centers)?;
         cluster_assignments = dist.argmin(D::Minus1)?;
         centers = Tensor::zeros_like(&centers)?;
     }
@@ -61,7 +62,7 @@ fn main() -> Result<()> {
     let args = Args::parse();
     let device = Device::cuda_if_available(0)?;
     let data = load_dataset(&args.data_csv, &device).unwrap();
-    println!("{:?}", data);
+    println!("Data Tensor {:?}", data);
     let (centers, cluster_assignments) = k_means(&data, 3, 100, &device)?;
     println!("{:?}", centers);
     Ok(())
