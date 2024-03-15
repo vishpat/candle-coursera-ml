@@ -7,7 +7,7 @@ use rand::prelude::*;
 fn cdist(x1: &Tensor, x2: &Tensor) -> Result<Tensor> {
     let x1 = x1.unsqueeze(0)?;
     let x2 = x2.unsqueeze(1)?;
-    Ok(x1.broadcast_sub(&x2)?.sqr()?.sum(D::Minus1)?.sqrt()?)
+    Ok(x1.broadcast_sub(&x2)?.sqr()?.sum(D::Minus1)?.sqrt()?.transpose(D::Minus1, D::Minus2)?)
 }
 
 fn load_dataset(file_path: &str, device: &Device) -> Result<Tensor> {
@@ -45,8 +45,8 @@ fn k_means(data: &Tensor, k: usize, max_iter: i64, device: &Device) -> Result<(T
     let mut cluster_assignments = Tensor::zeros((n,), DType::U32, device)?;
     for _ in 0..max_iter {
         let dist = cdist(data, &centers)?;
-        println!("{dist}");
         cluster_assignments = dist.argmin(D::Minus1)?;
+        println!("Cluster Assignments {cluster_assignments}");
         centers = Tensor::zeros_like(&centers)?;
     }
     Ok((centers, cluster_assignments))
@@ -63,8 +63,6 @@ fn main() -> Result<()> {
     let args = Args::parse();
     let device = Device::cuda_if_available(0)?;
     let data = load_dataset(&args.data_csv, &device).unwrap();
-    println!("Data Tensor {:?}", data);
     let (centers, cluster_assignments) = k_means(&data, 3, 1, &device)?;
-    println!("{centers}");
     Ok(())
 }
