@@ -81,12 +81,26 @@ struct Args {
     // Data CSV file from https://www.kaggle.com/datasets/uciml/iris/data
     #[arg(long)]
     data_csv: String,
+
+    // Number of clusters
+    #[arg(long, default_value = "3")]
+    k: usize,
+
+    // Maximum number of iterations
+    #[arg(long, default_value = "100")]
+    max_iter: i64,
 }
 fn main() -> Result<()> {
     let args = Args::parse();
     let device = Device::cuda_if_available(0)?;
     let data = load_dataset(&args.data_csv, &device).unwrap();
-    let (centers, cluster_assignments) = k_means(&data, 3, 1, &device)?;
+    let (centers, cluster_assignments) = k_means(&data, args.k, args.max_iter, &device)?;
+    println!("{}", centers);
     println!("{}", cluster_assignments);
+    let cluster_sizes = cluster_assignments.to_vec1::<u32>()?;
+    for i in 0..args.k {
+        let size = cluster_sizes.iter().filter(|&&x| x == i as u32).count();
+        println!("Cluster {} size: {}", i, size);
+    }
     Ok(())
 }
