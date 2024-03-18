@@ -1,0 +1,13 @@
+[package]
+name = "k-means"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+csv = "1.1.6"
+anyhow = "1.0.40"
+clap = {version = "4.3.1", features = ["derive"]} 
+rand = "0.8.5"
+candle-core = { git = "https://github.com/huggingface/candle.git", version = "0.4.1", features = ["cuda"] }
