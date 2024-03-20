@@ -1,6 +1,8 @@
 use anyhow::{Ok, Result};
 use candle_core::{DType, Device, Tensor, D};
 use clap::Parser;
+use nalgebra::linalg::SymmetricEigen;
+use nalgebra::DMatrix;
 
 fn load_dataset(file_path: &str, device: &Device) -> Result<Tensor> {
     let mut rdr = csv::Reader::from_path(file_path)?;
@@ -30,10 +32,32 @@ fn z_score_normalize(data: &Tensor) -> Result<Tensor> {
     Ok(normalized)
 }
 
-fn pca(data: &Tensor, device: &Device) -> Result<Tensor> {
-    let normalized_data = z_score_normalize(data)?;
-    println!("Normalized data: {normalized_data}");
-    Ok(normalized_data)
+fn cov(data: &Tensor, device: &Device) -> Result<Tensor> {
+    let mean = data.mean(0)?;
+    let centered = data.broadcast_sub(&mean)?;
+    let (m, n) = data.shape().dims2()?;
+    let cov = centered
+        .transpose(D::Minus1, D::Minus2)?
+        .matmul(&centered)?
+        .broadcast_div(&Tensor::new(m as f32, device)?)?;
+
+    Ok(cov)
+}
+
+fn pca(normalized_data: &Tensor, device: &Device) -> Result<Tensor> {
+    let (_, n) = normalized_data.shape().dims2()?;
+    let cov = cov(normalized_data, device)?;
+    let vec: Vec<f32> = cov
+        .to_device(&Device::Cpu)?
+        .to_vec2()?
+        .into_iter()
+        .flatten()
+        .collect();
+    let dmatrix = DMatrix::from_vec(n as usize, n as usize, vec);
+    let eig = SymmetricEigen::new(dmatrix);
+    println!("{:?}", eig.eigenvalues.data);
+    println!("{:?}", eig.eigenvectors.data);
+    Ok(cov)
 }
 
 #[derive(Parser, Debug)]
@@ -47,6 +71,8 @@ fn main() -> Result<()> {
     let args = Args::parse();
     let device = Device::cuda_if_available(0)?;
     let data = load_dataset(&args.data_csv, &device).unwrap();
+    let normalized_data = z_score_normalize(&data)?;
     let pca = pca(&data, &device)?;
+
     Ok(())
 }
