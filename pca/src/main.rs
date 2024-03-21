@@ -1,5 +1,5 @@
 use anyhow::{Ok, Result};
-use candle_core::{DType, Device, Tensor, D};
+use candle_core::{Device, Tensor, D};
 use clap::Parser;
 use nalgebra::linalg::SymmetricEigen;
 use nalgebra::DMatrix;
@@ -35,7 +35,7 @@ fn z_score_normalize(data: &Tensor) -> Result<Tensor> {
 fn cov(data: &Tensor, device: &Device) -> Result<Tensor> {
     let mean = data.mean(0)?;
     let centered = data.broadcast_sub(&mean)?;
-    let (m, n) = data.shape().dims2()?;
+    let (m, _) = data.shape().dims2()?;
     let cov = centered
         .transpose(D::Minus1, D::Minus2)?
         .matmul(&centered)?
@@ -44,7 +44,7 @@ fn cov(data: &Tensor, device: &Device) -> Result<Tensor> {
     Ok(cov)
 }
 
-fn pca(normalized_data: &Tensor, device: &Device) -> Result<Tensor> {
+fn pca(normalized_data: &Tensor, device: &Device, variance: f32) -> Result<Tensor> {
     let (_, n) = normalized_data.shape().dims2()?;
     let cov = cov(normalized_data, device)?;
     let vec: Vec<f32> = cov
@@ -53,11 +53,29 @@ fn pca(normalized_data: &Tensor, device: &Device) -> Result<Tensor> {
         .into_iter()
         .flatten()
         .collect();
-    let dmatrix = DMatrix::from_vec(n as usize, n as usize, vec);
+    let dmatrix = DMatrix::from_vec(n, n, vec);
     let eig = SymmetricEigen::new(dmatrix);
-    println!("{:?}", eig.eigenvalues.data);
-    println!("{:?}", eig.eigenvectors.data);
-    Ok(cov)
+    let eigen_values = eig.eigenvalues.data.as_vec();
+    let total = eigen_values.iter().sum::<f32>();
+    let mut k = 0;
+    for i in 0..n {
+        let var = eigen_values[0..i].iter().sum::<f32>() / total;
+        if var > variance {
+            println!("{} components explain {}% of the variance", i, var * 100.0);
+            k = i;
+            break;
+        }
+    }
+
+    let eigen_vectors = eig.eigenvectors.data.as_vec();
+    let eigen_vectors = eigen_vectors
+        .chunks(n)
+        .take(k)
+        .flatten()
+        .copied()
+        .collect::<Vec<_>>();
+    let eigen_vectors = Tensor::from_slice(eigen_vectors.as_slice(), (k, n), device)?;
+    Ok(eigen_vectors)
 }
 
 #[derive(Parser, Debug)]
@@ -66,13 +84,17 @@ struct Args {
     // Data CSV file from https://www.kaggle.com/datasets/uciml/iris/data
     #[arg(long)]
     data_csv: String,
+
+    #[arg(long, default_value = "0.95")]
+    variance: f32,
 }
 fn main() -> Result<()> {
     let args = Args::parse();
     let device = Device::cuda_if_available(0)?;
     let data = load_dataset(&args.data_csv, &device).unwrap();
     let normalized_data = z_score_normalize(&data)?;
-    let pca = pca(&data, &device)?;
-
+    let reduce = pca(&normalized_data, &device, args.variance)?;
+    let compressed_data = data.matmul(&reduce.transpose(D::Minus1, D::Minus2)?)?;
+    println!("Compressed data {:?}", compressed_data);
     Ok(())
 }

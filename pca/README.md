@@ -1,3 +1,3 @@
-# Principle Component Analysis
+# Principal Component Analysis
 
 Implementation of the PCA algorithm to reduce the dimensions of the Breast Cancer Wisconsin (Diagnostic) Data Set [dataset](https://www.kaggle.com/datasets/uciml/breast-cancer-wisconsin-data)
