@@ -3,7 +3,7 @@ use std::vec;
 
 use anyhow::Result;
 use candle_core::{Device, Tensor};
-use clap::{ArgAction, Parser};
+use clap::Parser;
 
 fn load_dataset(file_path: &str, device: &Device) -> Result<Tensor> {
     let mut rdr = csv::Reader::from_path(file_path)?;
@@ -39,7 +39,7 @@ struct Args {
     #[arg(long)]
     data_csv: String,
 
-    #[arg(long, short, action=ArgAction::SetFalse, default_value = "false") ]
+    #[arg(long, short, default_value = "false")]
     print: bool,
 
     #[arg(long, default_value = "0.001")]
@@ -53,11 +53,11 @@ fn p_x(
     two_pi_sqrt_std_dev: &Tensor,
 ) -> Result<f64> {
     let px = x
-        .broadcast_sub(&mean)?
+        .broadcast_sub(mean)?
         .sqr()?
-        .broadcast_div(&two_variance)?
+        .broadcast_div(two_variance)?
         .exp()?
-        .broadcast_mul(&two_pi_sqrt_std_dev)?
+        .broadcast_mul(two_pi_sqrt_std_dev)?
         .recip()?;
     let px = px.to_vec1::<f64>()?.into_iter().fold(1.0, |acc, x| acc * x);
     Ok(px)
@@ -72,18 +72,12 @@ fn main() -> Result<()> {
     let data = z_score_normalize(&data)?;
 
     let mean = data.mean(0)?;
-    println!("Mean: {}", mean);
-
     let variance = data.broadcast_sub(&mean)?.sqr()?.mean(0)?;
     let std_dev = variance.sqrt()?;
-    println!("std_dev: {}", std_dev);
 
     let two_variance = variance.broadcast_mul(&Tensor::new(2.0, &device)?)?;
-    println!("two_variance: {}", two_variance);
-
     let two_pi_sqrt_std_dev =
         std_dev.broadcast_mul(&Tensor::new(2.0 * std::f64::consts::PI, &device)?.sqrt()?)?;
-    println!("two_pi_sqrt_std_dev: {}", two_pi_sqrt_std_dev);
 
     let rows = data.shape().dims2()?.0;
     let mut anamolies = 0;
