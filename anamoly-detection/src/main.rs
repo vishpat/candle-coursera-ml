@@ -3,7 +3,7 @@ use std::vec;
 
 use anyhow::Result;
 use candle_core::{Device, Tensor};
-use clap::Parser;
+use clap::{ArgAction, Parser};
 
 fn load_dataset(file_path: &str, device: &Device) -> Result<Tensor> {
     let mut rdr = csv::Reader::from_path(file_path)?;
@@ -39,7 +39,10 @@ struct Args {
     #[arg(long)]
     data_csv: String,
 
-    #[arg(long, default_value = "0.01")]
+    #[arg(long, short, action=ArgAction::SetFalse, default_value = "false") ]
+    print: bool,
+
+    #[arg(long, default_value = "0.001")]
     episilon: f64,
 }
 
@@ -62,6 +65,7 @@ fn p_x(
 
 fn main() -> Result<()> {
     let args = Args::parse();
+
     let device = Device::cuda_if_available(0)?;
     let data = load_dataset(&args.data_csv, &device)?;
 
@@ -90,6 +94,9 @@ fn main() -> Result<()> {
         let px = p_x(&row_tensor, &mean, &two_variance, &two_pi_sqrt_std_dev)?;
         if px < args.episilon {
             anamolies += 1;
+            if args.print {
+                println!("Anamoly: {}", row + 1);
+            }
         }
     }
 
