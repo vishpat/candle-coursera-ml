@@ -23,27 +23,39 @@ fn load_dataset(file_path: &str, device: &Device) -> Result<Tensor> {
     Ok(data)
 }
 
+fn z_score_normalize(data: &Tensor) -> Result<Tensor> {
+    let mean = data.mean(0)?;
+    let squared_diff = data.broadcast_sub(&mean)?.sqr()?;
+    let variance = squared_diff.mean(0)?;
+    let std_dev = variance.sqrt()?;
+    let normalized = data.broadcast_sub(&mean)?.broadcast_div(&std_dev)?;
+    Ok(normalized)
+}
+
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
     // Data CSV file from https://www.kaggle.com/c/eecs498/data
     #[arg(long)]
     data_csv: String,
+
+    #[arg(long, default_value = "0.01")]
+    episilon: f64,
 }
 
-fn p(
+fn p_x(
     x: &Tensor,
     mean: &Tensor,
     two_variance: &Tensor,
     two_pi_sqrt_std_dev: &Tensor,
-    device: &Device,
 ) -> Result<f64> {
     let px = x
         .broadcast_sub(&mean)?
-        .div(&two_variance)?
-        .broadcast_mul(&Tensor::new(-1.0, &device)?)?
+        .sqr()?
+        .broadcast_div(&two_variance)?
         .exp()?
-        .broadcast_div(&two_pi_sqrt_std_dev)?;
+        .broadcast_mul(&two_pi_sqrt_std_dev)?
+        .recip()?;
     let px = px.to_vec1::<f64>()?.into_iter().fold(1.0, |acc, x| acc * x);
     Ok(px)
 }
@@ -53,12 +65,35 @@ fn main() -> Result<()> {
     let device = Device::cuda_if_available(0)?;
     let data = load_dataset(&args.data_csv, &device)?;
 
+    let data = z_score_normalize(&data)?;
+
     let mean = data.mean(0)?;
+    println!("Mean: {}", mean);
+
     let variance = data.broadcast_sub(&mean)?.sqr()?.mean(0)?;
     let std_dev = variance.sqrt()?;
+    println!("std_dev: {}", std_dev);
+
     let two_variance = variance.broadcast_mul(&Tensor::new(2.0, &device)?)?;
+    println!("two_variance: {}", two_variance);
+
     let two_pi_sqrt_std_dev =
         std_dev.broadcast_mul(&Tensor::new(2.0 * std::f64::consts::PI, &device)?.sqrt()?)?;
+    println!("two_pi_sqrt_std_dev: {}", two_pi_sqrt_std_dev);
+
+    let rows = data.shape().dims2()?.0;
+    let mut anamolies = 0;
+    for row in 0..rows {
+        let row_tensor = data
+            .index_select(&Tensor::new(&[row as u32], &device)?, 0)?
+            .squeeze(0)?;
+        let px = p_x(&row_tensor, &mean, &two_variance, &two_pi_sqrt_std_dev)?;
+        if px < args.episilon {
+            anamolies += 1;
+        }
+    }
+
+    println!("Anamolies: {}, Total: {}", anamolies, rows);
 
     Ok(())
 }
