@@ -51,7 +51,7 @@ struct Args {
     ratings_csv: String,
 
     // Number of epochs to train
-    #[arg(long, default_value = "10")]
+    #[arg(long, default_value = "100")]
     epochs: u32,
 
     // Learning rate
@@ -63,12 +63,15 @@ struct Args {
     reg: f32,
 
     // Number of features
-    #[arg(long, default_value = "100")]
+    #[arg(long, default_value = "10")]
     n_features: usize,
 }
 
 fn main() -> Result<()> {
     let args = Args::parse();
+    let reg = Tensor::new(args.reg, &Device::cuda_if_available(0)?)?;
+    let lr = Tensor::new(args.lr, &Device::cuda_if_available(0)?)?;
+
     let device = Device::cuda_if_available(0)?;
 
     let (users, movies, ratings) = load_ratings(&args.ratings_csv).unwrap();
@@ -82,26 +85,38 @@ fn main() -> Result<()> {
     println!("n_users: {}, n_movies: {}", n_users, n_movies);
 
     let mut Y = vec![vec![0.0; n_users as usize]; n_movies as usize];
-    let mut R = vec![vec![0u32; n_users as usize]; n_movies as usize];
+    let mut R = vec![vec![0.0; n_users as usize]; n_movies as usize];
 
     for rating in ratings.iter() {
         let i = movies.iter().position(|&x| x == rating.movie).unwrap();
         let j = users.iter().position(|&x| x == rating.user).unwrap();
         Y[i][j] = rating.rating();
-        R[i][j] = 1;
+        R[i][j] = 1.0;
     }
 
     let Y = Y.iter().flatten().copied().collect::<Vec<f32>>();
     let Y = Tensor::from_slice(&Y, (n_movies, n_users), &device)?;
+    println!("Y: {:?}", Y);
 
-    let R = R.iter().flatten().copied().collect::<Vec<u32>>();
+    let R = R.iter().flatten().copied().collect::<Vec<f32>>();
     let R = Tensor::from_slice(&R, (n_movies, n_users), &device)?;
+    println!("R: {:?}", R);
 
-    let X = Tensor::randn(0f32, 1., (n_movies, args.n_features), &device)?;
-    let Theta = Tensor::randn(0f32, 1., (n_users, args.n_features), &device)?;
-
+    let mut X = Tensor::randn(0f32, 1., (n_movies, args.n_features), &device)?;
     println!("X: {:?}", X);
+
+    let mut Theta = Tensor::randn(0f32, 1., (n_users, args.n_features), &device)?;
     println!("Theta: {:?}", Theta);
+
+    for i in 0..args.epochs {
+        let common = X.matmul(&Theta.t()?)?.sub(&Y)?;
+
+        let grad_X = common.matmul(&Theta)?.add(&X.broadcast_mul(&reg)?)?;
+        X = X.sub(&grad_X.broadcast_mul(&lr)?)?;
+
+        let grad_Theta = common.t()?.matmul(&X)?.add(&Theta.broadcast_mul(&reg)?)?;
+        Theta = Theta.sub(&grad_Theta.broadcast_mul(&lr)?)?;
+    }
 
     Ok(())
 }
