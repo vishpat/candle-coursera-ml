@@ -79,24 +79,29 @@ fn main() -> Result<()> {
     let n_users = users.len();
     let n_movies = movies.len();
 
-    let mut Y = vec![vec![0.0; n_movies as usize]; n_users as usize];
-    let mut R = vec![vec![0.0; n_movies as usize]; n_users as usize];
+    println!("n_users: {}, n_movies: {}", n_users, n_movies);
+
+    let mut Y = vec![vec![0.0; n_users as usize]; n_movies as usize];
+    let mut R = vec![vec![0u32; n_users as usize]; n_movies as usize];
 
     for rating in ratings.iter() {
-        let i = users.iter().position(|&x| x == rating.movie).unwrap();
-        let j = movies.iter().position(|&x| x == rating.user).unwrap();
+        let i = movies.iter().position(|&x| x == rating.movie).unwrap();
+        let j = users.iter().position(|&x| x == rating.user).unwrap();
         Y[i][j] = rating.rating();
-        R[i][j] = 1.0;
+        R[i][j] = 1;
     }
 
     let Y = Y.iter().flatten().copied().collect::<Vec<f32>>();
     let Y = Tensor::from_slice(&Y, (n_movies, n_users), &device)?;
 
-    let R = R.iter().flatten().copied().collect::<Vec<f32>>();
+    let R = R.iter().flatten().copied().collect::<Vec<u32>>();
     let R = Tensor::from_slice(&R, (n_movies, n_users), &device)?;
 
     let X = Tensor::randn(0f32, 1., (n_movies, args.n_features), &device)?;
     let Theta = Tensor::randn(0f32, 1., (n_users, args.n_features), &device)?;
+
+    println!("X: {:?}", X);
+    println!("Theta: {:?}", Theta);
 
     Ok(())
 }
