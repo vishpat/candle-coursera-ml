@@ -76,8 +76,8 @@ fn z_score_normalize(data: &Tensor) -> Result<Tensor> {
     Ok(normalized)
 }
 
-fn cost(X: &Tensor, Theta: &Tensor, Y: &Tensor, R: &Tensor) -> Result<f32> {
-    let c = X.matmul(&Theta.t()?)?.mul(&R)?.sub(&Y.mul(&R)?)?.sqr()?.sum_all()?.to_scalar::<f32>()?;
+fn cost(X: &Tensor, W: &Tensor, Y: &Tensor, R: &Tensor) -> Result<f32> {
+    let c = X.matmul(&W.t()?)?.mul(&R)?.sub(&Y.mul(&R)?)?.sqr()?.sum_all()?.to_scalar::<f32>()?;
     Ok(c)
 }
 
@@ -117,18 +117,18 @@ fn main() -> Result<()> {
 
     let mut X = Tensor::randn(0f32, 1., (n_movies, args.n_features), &device)?;
 
-    let mut Theta = Tensor::randn(0f32, 1., (n_users, args.n_features), &device)?;
+    let mut W = Tensor::randn(0f32, 1., (n_users, args.n_features), &device)?;
 
     for i in 0..args.epochs {
-        let common = X.matmul(&Theta.t()?)?.mul(&R)?.sub(&Y.mul(&R)?)?;
+        let common = X.matmul(&W.t()?)?.mul(&R)?.sub(&Y.mul(&R)?)?;
 
-        let grad_X = common.matmul(&Theta)?.add(&X.broadcast_mul(&reg)?)?;
+        let grad_X = common.matmul(&W)?.add(&X.broadcast_mul(&reg)?)?;
         X = X.sub(&grad_X.broadcast_mul(&lr)?)?;
 
-        let grad_Theta = common.t()?.matmul(&X)?.add(&Theta.broadcast_mul(&reg)?)?;
-        Theta = Theta.sub(&grad_Theta.broadcast_mul(&lr)?)?;
+        let grad_W = common.t()?.matmul(&X)?.add(&W.broadcast_mul(&reg)?)?;
+        W = W.sub(&grad_W.broadcast_mul(&lr)?)?;
 
-        println!("Epoch: {}, Cost: {}", i, cost(&X, &Theta, &Y, &R)?);
+        println!("Epoch: {}, Cost: {}", i, cost(&X, &W, &Y, &R)?);
     }
 
     Ok(())
