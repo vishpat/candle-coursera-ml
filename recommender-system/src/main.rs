@@ -67,6 +67,20 @@ struct Args {
     n_features: usize,
 }
 
+fn z_score_normalize(data: &Tensor) -> Result<Tensor> {
+    let mean = data.mean(0)?;
+    let squared_diff = data.broadcast_sub(&mean)?.sqr()?;
+    let variance = squared_diff.mean(0)?;
+    let std_dev = variance.sqrt()?;
+    let normalized = data.broadcast_sub(&mean)?.broadcast_div(&std_dev)?;
+    Ok(normalized)
+}
+
+fn cost(X: &Tensor, Theta: &Tensor, Y: &Tensor, R: &Tensor) -> Result<f32> {
+    let c = X.matmul(&Theta.t()?)?.mul(&R)?.sub(&Y.mul(&R)?)?.sqr()?.sum_all()?.to_scalar::<f32>()?;
+    Ok(c)
+}
+
 fn main() -> Result<()> {
     let args = Args::parse();
     let reg = Tensor::new(args.reg, &Device::cuda_if_available(0)?)?;
@@ -96,26 +110,25 @@ fn main() -> Result<()> {
 
     let Y = Y.iter().flatten().copied().collect::<Vec<f32>>();
     let Y = Tensor::from_slice(&Y, (n_movies, n_users), &device)?;
-    println!("Y: {:?}", Y);
+    let Y = z_score_normalize(&Y)?;
 
     let R = R.iter().flatten().copied().collect::<Vec<f32>>();
     let R = Tensor::from_slice(&R, (n_movies, n_users), &device)?;
-    println!("R: {:?}", R);
 
     let mut X = Tensor::randn(0f32, 1., (n_movies, args.n_features), &device)?;
-    println!("X: {:?}", X);
 
     let mut Theta = Tensor::randn(0f32, 1., (n_users, args.n_features), &device)?;
-    println!("Theta: {:?}", Theta);
 
     for i in 0..args.epochs {
-        let common = X.matmul(&Theta.t()?)?.mul(&R)?.sub(&Y)?;
+        let common = X.matmul(&Theta.t()?)?.mul(&R)?.sub(&Y.mul(&R)?)?;
 
         let grad_X = common.matmul(&Theta)?.add(&X.broadcast_mul(&reg)?)?;
         X = X.sub(&grad_X.broadcast_mul(&lr)?)?;
 
         let grad_Theta = common.t()?.matmul(&X)?.add(&Theta.broadcast_mul(&reg)?)?;
         Theta = Theta.sub(&grad_Theta.broadcast_mul(&lr)?)?;
+
+        println!("Epoch: {}, Cost: {}", i, cost(&X, &Theta, &Y, &R)?);
     }
 
     Ok(())
