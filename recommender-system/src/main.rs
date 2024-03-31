@@ -109,7 +109,7 @@ fn main() -> Result<()> {
     println!("Theta: {:?}", Theta);
 
     for i in 0..args.epochs {
-        let common = X.matmul(&Theta.t()?)?.sub(&Y)?;
+        let common = X.matmul(&Theta.t()?)?.mul(&R)?.sub(&Y)?;
 
         let grad_X = common.matmul(&Theta)?.add(&X.broadcast_mul(&reg)?)?;
         X = X.sub(&grad_X.broadcast_mul(&lr)?)?;
