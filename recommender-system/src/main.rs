@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use std::vec;
 
 use anyhow::Result;
-use candle_core::{Device, Tensor};
+use candle_core::{DType, Device, Tensor};
 use clap::Parser;
 
 #[derive(PartialEq, Eq, Hash, Debug, Clone, Copy)]
@@ -63,17 +63,16 @@ struct Args {
     reg: f32,
 
     // Number of features
-    #[arg(long, default_value = "10")]
+    #[arg(long, default_value = "100")]
     n_features: usize,
 }
 
-fn z_score_normalize(data: &Tensor) -> Result<Tensor> {
-    let mean = data.mean(0)?;
-    let squared_diff = data.broadcast_sub(&mean)?.sqr()?;
-    let variance = squared_diff.mean(0)?;
-    let std_dev = variance.sqrt()?;
-    let normalized = data.broadcast_sub(&mean)?.broadcast_div(&std_dev)?;
-    Ok(normalized)
+fn mean_normalization(ratings: &Tensor, R: &Tensor) -> Result<Tensor> {
+    let sum = ratings.sum(0)?;
+    let count = R.sum(0)?;
+    let mean = sum.div(&count)?;
+    let adjusted= ratings.broadcast_sub(&mean)?.mul(&R)?;
+    Ok(adjusted)
 }
 
 fn cost(X: &Tensor, W: &Tensor, Y: &Tensor, R: &Tensor) -> Result<f32> {
@@ -98,7 +97,7 @@ fn main() -> Result<()> {
 
     println!("n_users: {}, n_movies: {}", n_users, n_movies);
 
-    let mut Y = vec![vec![0.0; n_users as usize]; n_movies as usize];
+    let mut Y = vec![vec![-1.0; n_users as usize]; n_movies as usize];
     let mut R = vec![vec![0.0; n_users as usize]; n_movies as usize];
 
     for rating in ratings.iter() {
@@ -107,21 +106,19 @@ fn main() -> Result<()> {
         Y[i][j] = rating.rating();
         R[i][j] = 1.0;
     }
-
-    let Y = Y.iter().flatten().copied().collect::<Vec<f32>>();
-    let Y = Tensor::from_slice(&Y, (n_movies, n_users), &device)?;
-    let Y = z_score_normalize(&Y)?;
-
     let R = R.iter().flatten().copied().collect::<Vec<f32>>();
     let R = Tensor::from_slice(&R, (n_movies, n_users), &device)?;
 
-    let mut X = Tensor::randn(0f32, 1., (n_movies, args.n_features), &device)?;
+    let Y = Y.iter().flatten().copied().collect::<Vec<f32>>();
+    let Y = Tensor::from_slice(&Y, (n_movies, n_users), &device)?;
+    let Y = mean_normalization(&Y, &R)?;
+    println!("Mean normalized rating: {Y}");
 
-    let mut W = Tensor::randn(0f32, 1., (n_users, args.n_features), &device)?;
+    let mut X = Tensor::randn(2.5f32, 1., (n_movies, args.n_features), &device)?;
+    let mut W = Tensor::randn(2.5f32, 1., (n_users, args.n_features), &device)?;
 
     for i in 0..args.epochs {
         let common = X.matmul(&W.t()?)?.mul(&R)?.sub(&Y.mul(&R)?)?;
-
         let grad_X = common.matmul(&W)?.add(&X.broadcast_mul(&reg)?)?;
         X = X.sub(&grad_X.broadcast_mul(&lr)?)?;
 
