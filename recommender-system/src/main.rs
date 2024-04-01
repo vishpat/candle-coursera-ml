@@ -1,4 +1,5 @@
 extern crate csv;
+use std::cmp::Ordering;
 use std::collections::HashSet;
 use std::vec;
 
@@ -16,6 +17,22 @@ struct Rating {
 impl Rating {
     fn rating(&self) -> f32 {
         self.rating_u32 as f32 / 10.0
+    }
+}
+
+// Step 2: Implement `PartialOrd` and `Ord` for the struct.
+impl PartialOrd for Rating {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for Rating {
+    fn cmp(&self, other: &Self) -> Ordering {
+        // First compare by `userId`, then by `movieId`.
+        self.user
+            .cmp(&other.user)
+            .then_with(|| self.movie.cmp(&other.movie))
     }
 }
 
@@ -51,7 +68,7 @@ struct Args {
     ratings_csv: String,
 
     // Number of epochs to train
-    #[arg(long, default_value = "100")]
+    #[arg(long, default_value = "250")]
     epochs: u32,
 
     // Learning rate
@@ -68,15 +85,21 @@ struct Args {
 }
 
 fn mean_normalization(ratings: &Tensor, R: &Tensor) -> Result<Tensor> {
-    let sum = ratings.sum(0)?;
-    let count = R.sum(0)?;
+    let sum = ratings.mul(&R)?.sum(1)?;
+    let count = R.sum(1)?;
     let mean = sum.div(&count)?;
-    let adjusted= ratings.broadcast_sub(&mean)?.mul(&R)?;
+    let adjusted = ratings.broadcast_sub(&mean.unsqueeze(1)?)?;
     Ok(adjusted)
 }
 
 fn cost(X: &Tensor, W: &Tensor, Y: &Tensor, R: &Tensor) -> Result<f32> {
-    let c = X.matmul(&W.t()?)?.mul(&R)?.sub(&Y.mul(&R)?)?.sqr()?.sum_all()?.to_scalar::<f32>()?;
+    let c = X
+        .matmul(&W.t()?)?
+        .mul(&R)?
+        .sub(&Y.mul(&R)?)?
+        .sqr()?
+        .sum_all()?
+        .to_scalar::<f32>()?;
     Ok(c)
 }
 
@@ -88,9 +111,14 @@ fn main() -> Result<()> {
     let device = Device::cuda_if_available(0)?;
 
     let (users, movies, ratings) = load_ratings(&args.ratings_csv).unwrap();
-    let users: Vec<u32> = users.into_iter().collect();
-    let movies: Vec<u32> = movies.into_iter().collect();
-    let ratings: Vec<Rating> = ratings.into_iter().collect();
+    let mut users: Vec<u32> = users.into_iter().collect();
+    users.sort();
+
+    let mut movies: Vec<u32> = movies.into_iter().collect();
+    movies.sort();
+
+    let mut ratings: Vec<Rating> = ratings.into_iter().collect();
+    ratings.sort();
 
     let n_users = users.len();
     let n_movies = movies.len();
@@ -120,7 +148,7 @@ fn main() -> Result<()> {
         let diff = X.matmul(&W.t()?)?.mul(&R)?.sub(&Y.mul(&R)?)?;
         let grad_X = diff.matmul(&W)?.add(&X.broadcast_mul(&reg)?)?;
         let grad_W = diff.t()?.matmul(&X)?.add(&W.broadcast_mul(&reg)?)?;
-        
+
         X = X.sub(&grad_X.broadcast_mul(&lr)?)?;
         W = W.sub(&grad_W.broadcast_mul(&lr)?)?;
 
