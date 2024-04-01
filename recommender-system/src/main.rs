@@ -112,17 +112,17 @@ fn main() -> Result<()> {
     let Y = Y.iter().flatten().copied().collect::<Vec<f32>>();
     let Y = Tensor::from_slice(&Y, (n_movies, n_users), &device)?;
     let Y = mean_normalization(&Y, &R)?;
-    println!("Mean normalized rating: {Y}");
 
-    let mut X = Tensor::randn(2.5f32, 1., (n_movies, args.n_features), &device)?;
-    let mut W = Tensor::randn(2.5f32, 1., (n_users, args.n_features), &device)?;
+    let mut X = Tensor::randn(0f32, 1., (n_movies, args.n_features), &device)?;
+    let mut W = Tensor::randn(0f32, 1., (n_users, args.n_features), &device)?;
 
+    println!("Initial Cost: {}", cost(&X, &W, &Y, &R)?);
     for i in 0..args.epochs {
         let common = X.matmul(&W.t()?)?.mul(&R)?.sub(&Y.mul(&R)?)?;
         let grad_X = common.matmul(&W)?.add(&X.broadcast_mul(&reg)?)?;
-        X = X.sub(&grad_X.broadcast_mul(&lr)?)?;
-
         let grad_W = common.t()?.matmul(&X)?.add(&W.broadcast_mul(&reg)?)?;
+        
+        X = X.sub(&grad_X.broadcast_mul(&lr)?)?;
         W = W.sub(&grad_W.broadcast_mul(&lr)?)?;
 
         println!("Epoch: {}, Cost: {}", i, cost(&X, &W, &Y, &R)?);
