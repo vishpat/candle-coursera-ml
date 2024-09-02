@@ -39,7 +39,7 @@ fn cov(data: &Tensor, device: &Device) -> Result<Tensor> {
     let cov = centered
         .transpose(D::Minus1, D::Minus2)?
         .matmul(&centered)?
-        .broadcast_div(&Tensor::new(m as f32, device)?)?;
+        .broadcast_div(&Tensor::new((m - 1) as f32, device)?)?;
 
     Ok(cov)
 }
