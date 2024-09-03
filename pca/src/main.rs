@@ -92,8 +92,10 @@ fn main() -> Result<()> {
     let args = Args::parse();
     let device = Device::cuda_if_available(0)?;
     let data = load_dataset(&args.data_csv, &device).unwrap();
+    println!("Original Data {:?}", data);
     let normalized_data = z_score_normalize(&data)?;
     let reduce = pca(&normalized_data, &device, args.variance)?;
+    println!("PCA {:?}", reduce);
     let compressed_data = data.matmul(&reduce.transpose(D::Minus1, D::Minus2)?)?;
     println!("Compressed data {:?}", compressed_data);
     Ok(())
