@@ -70,30 +70,18 @@ fn load_dataset(device: &Device) -> Result<Dataset> {
     })
 }
 
-fn r_square(y_true: &Tensor, y_pred: &Tensor, device: &Device) -> Result<Tensor> {
-    let samples = y_true.shape().dims1()?;
-    let pred_samples = y_pred.shape().dims1()?;
-    if samples != pred_samples {
-        return Err(anyhow::anyhow!(
-            "y_true and y_pred must have the same number of samples"
-        ));
-    }
-    let y_mean = y_true.mean(0).unwrap();
-    let ss_tot = y_true
-        .broadcast_sub(&y_mean)
-        .unwrap()
-        .sqr()
-        .unwrap()
-        .sum(D::Minus1)
-        .unwrap();
-    let ss_res = y_true
-        .sub(&y_pred)
-        .unwrap()
-        .sqr()
-        .unwrap()
-        .sum(D::Minus1)
-        .unwrap();
-    Ok(Tensor::new(1.0 as f32, &device)?.sub(&ss_res.broadcast_div(&ss_tot)?)?)
+fn r_square(labels: &Tensor, predictions: &Tensor) -> Result<f32> {
+    let mean = labels.mean(D::Minus1)?;
+
+    let ssr = labels.sub(predictions)?;
+    let ssr = ssr.mul(&ssr)?.sum(D::Minus1)?;
+
+    let sst = labels.broadcast_sub(&mean)?;
+    let sst = sst.mul(&sst)?.sum(D::Minus1)?;
+
+    let tmp = ssr.div(&sst)?.to_scalar::<f32>()?;
+
+    Ok(1.0 - tmp)
 }
 
 struct Mlp {
@@ -177,7 +165,7 @@ fn main() -> Result<()> {
         if args.progress && epoch % 100 == 0 {
             println!(
                 "{epoch:4} test r2: {:?}",
-                r_square(&test_values, &test_logits.squeeze(1)?, &device)?.to_scalar::<f32>()?
+                r_square(&test_values, &test_logits.squeeze(1)?)?
             );
         }
     }
