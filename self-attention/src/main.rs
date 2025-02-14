@@ -33,18 +33,15 @@ impl SelfAttention {
 
 impl SelfAttention {
     fn attention(&self, x: &Tensor) -> Result<Tensor> {
-        println!("x: {:?}", x);
         let q = self.w_q.forward(x)?;
         let k = self.w_k.forward(x)?;
         let v = self.w_v.forward(x)?;
 
-        println!("q: {:?}, k: {:?}", q, k);
         let qk = q.matmul(&k.transpose(1, 0)?)?;
 
         let qk = qk.broadcast_div(&self.scale)?;
         let qk = softmax(&qk, 1)?;
 
-        println!("qk: {:?}, v: {:?}", qk, v);
         Ok(qk.matmul(&v)?)
     }
 }
